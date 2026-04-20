@@ -1,0 +1,81 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;600;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-accent: "Outfit", sans-serif;
+
+  --color-theme-orange: #ff6b00;
+  --color-theme-red: #ff3e3e;
+  --color-theme-white: #ffffff;
+  --color-cyber-black: #08080a;
+  --color-cyber-gray: #121217;
+}
+
+@layer base {
+  body {
+    @apply bg-cyber-black text-white selection:bg-theme-orange/30 overflow-x-hidden;
+    font-family: var(--font-sans);
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    @apply tracking-tight;
+  }
+
+  .font-accent {
+    font-family: var(--font-accent);
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl overflow-hidden;
+  }
+
+  .glass-card {
+    @apply bg-white/[0.03] backdrop-blur-md border border-white/[0.08] hover:bg-white/[0.06] transition-all duration-300 rounded-2xl p-4;
+  }
+
+  .theme-border-orange {
+    @apply border border-theme-orange/40 shadow-[0_8px_32px_rgba(255,107,0,0.15)];
+  }
+
+  .theme-border-red {
+    @apply border border-theme-red/40 shadow-[0_8px_32px_rgba(255,62,62,0.15)];
+  }
+
+  .theme-text-orange {
+    @apply text-theme-orange brightness-110 drop-shadow-[0_0_8px_rgba(255,107,0,0.5)];
+  }
+
+  .theme-text-red {
+    @apply text-theme-red brightness-110 drop-shadow-[0_0_8px_rgba(255,62,62,0.5)];
+  }
+
+  .theme-btn {
+    @apply relative overflow-hidden transition-all duration-300 active:scale-95 px-8 py-3 rounded-2xl font-bold uppercase tracking-widest text-[10px] border border-white/10 backdrop-blur-md;
+  }
+
+  .theme-btn-orange {
+    @apply bg-theme-orange/10 text-theme-orange border-theme-orange/30 hover:bg-theme-orange hover:text-black;
+  }
+
+  .theme-btn-red {
+    @apply bg-theme-red/10 text-theme-red border-theme-red/30 hover:bg-theme-red hover:text-black;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full hover:bg-white/20;
+}

@@ -1,0 +1,129 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Application user profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string", "description": "Unique handle" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Username": {
+      "title": "Username Reservation",
+      "description": "Mapping from username to UID to ensure uniqueness",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" }
+      },
+      "required": ["uid"]
+    },
+    "Article": {
+      "title": "Blog Article",
+      "description": "Full blog articles and news updates",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "content": { "type": "string", "description": "Markdown content for the full article" },
+        "image": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "date": { "type": "string" },
+        "views": { "type": "number" },
+        "likes": { "type": "number" },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "description", "content", "image", "authorId"]
+    },
+    "OTP": {
+      "title": "OTP Verification",
+      "description": "One-time passwords for email verification",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "code": { "type": "string" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "code", "expiresAt"]
+    },
+    "Post": {
+      "title": "Community Post",
+      "description": "Main thread posts in community",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "likes": { "type": "number" },
+        "replyCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["content", "authorId", "authorUsername"]
+    },
+    "Reply": {
+      "title": "Post Reply",
+      "description": "Replies to community posts",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "content", "authorId", "authorUsername"]
+    },
+    "Recommendation": {
+      "title": "Priority Op Recommendation",
+      "description": "Featured anime recommendations for the Priority Ops section",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "rating": { "type": "number" },
+        "image": { "type": "string" },
+        "studio": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "rating", "image", "studio"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Article collection"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Community discussions"
+    },
+    "/replies/{replyId}": {
+      "schema": "Reply",
+      "description": "Flat list of replies (filtered by postId)"
+    },
+    "/recommendations/{recommendationId}": {
+      "schema": "Recommendation",
+      "description": "Featured anime recommendations"
+    },
+    "/otps/{otpId}": {
+      "schema": "OTP",
+      "description": "Temporary OTP codes"
+    }
+  }
+}

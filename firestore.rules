@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE HELPERS ---
+    function isSignedIn() { return request.auth != null; }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isAdmin() { 
+      // STRICT ADMIN CHECK: Email explicitly requested by user
+      return isSignedIn() && (request.auth.token.email == 'anshsureshsingh07@gmail.com' && isEmailVerified());
+    }
+
+    // --- ENTITY VALIDATIONS ---
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.role in ['user', 'admin'] &&
+             (!data.keys().contains('username') || (data.username is string && data.username.size() >= 3 && data.username.size() <= 32 && data.username.matches('^[a-zA-Z0-9_]+$'))) &&
+             data.keys().hasAll(['uid', 'email', 'role']) && data.keys().size() >= 3;
+    }
+
+    function isValidArticle(data) {
+      return data.title is string && data.title.size() <= 256 &&
+             data.category is string &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.content is string && data.content.size() <= 50000 &&
+             data.authorId == request.auth.uid &&
+             data.keys().hasAll(['title', 'category', 'description', 'content', 'image', 'authorId']) && data.keys().size() >= 6;
+    }
+
+    function isValidPost(data) {
+      return data.content is string && data.content.size() <= 1000 &&
+             data.authorUsername is string &&
+             data.authorId == request.auth.uid &&
+             data.keys().hasAll(['content', 'authorId', 'authorUsername']) && data.keys().size() >= 3;
+    }
+
+    function isValidReply(data) {
+      return data.content is string && data.content.size() <= 1000 &&
+             data.authorUsername is string &&
+             data.postId is string &&
+             data.authorId == request.auth.uid &&
+             data.keys().hasAll(['content', 'authorId', 'authorUsername', 'postId']) && data.keys().size() >= 4;
+    }
+
+    function isValidRecommendation(data) {
+      return data.title is string && data.title.size() <= 256 &&
+             data.rating is number && data.rating >= 0 && data.rating <= 10 &&
+             data.image is string &&
+             data.studio is string &&
+             data.keys().hasAll(['title', 'rating', 'image', 'studio']) && data.keys().size() >= 4;
+    }
+
+    // --- COLLECTION RULES ---
+
+    // Users: Owners can read/write their own profiles
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role == 'user'; // Users can't self-promote to admin
+      allow update: if isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().role == existing().role && // Prevent role change
+                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'username']) &&
+                    // Enforce username uniqueness if changing
+                    (!incoming().keys().contains('username') || 
+                     (incoming().username == existing().username) ||
+                     (getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.uid == userId));
+    }
+
+    // Usernames: Unique handle reservation
+    match /usernames/{username} {
+      allow get: if true;
+      allow create: if isSignedIn() && incoming().uid == request.auth.uid && isValidId(username);
+      allow delete: if isSignedIn() && existing().uid == request.auth.uid;
+    }
+
+    // Community Posts
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidPost(incoming());
+      allow update: if isSignedIn() && (
+        (isOwner(existing().authorId) && isValidPost(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'authorPhoto', 'authorUsername', 'author'])) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'replyCount']))
+      );
+      allow delete: if isOwner(existing().authorId) || isAdmin();
+    }
+
+    // Replies
+    match /replies/{replyId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidReply(incoming());
+      allow update: if isOwner(existing().authorId) && isValidReply(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'authorPhoto', 'authorUsername', 'author']);
+      allow delete: if isOwner(existing().authorId) || isAdmin();
+    }
+
+    // Articles: Public read, Admin write
+    match /articles/{articleId} {
+      allow get: if true;
+      allow list: if true;
+      allow create: if isAdmin() && isValidArticle(incoming());
+      allow update: if isAdmin() && isValidArticle(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Recommendations: Public read, Admin write
+    match /recommendations/{recId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidRecommendation(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // OTPs: Internal verification logic (normally handled by cloud functions or restrictive rules)
+    match /otps/{otpId} {
+      allow get: if false; // OTPs should ideally be handled via Auth or verified via server
+      allow create: if isSignedIn(); // Allow creating for verification flow
+    }
+  }
+}
