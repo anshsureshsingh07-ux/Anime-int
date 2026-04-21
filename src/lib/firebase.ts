@@ -1,13 +1,23 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBHaVRIMzYy2du_s2hCLmGlBsTFEtJ1DJc",
+  authDomain: "anime-int.firebaseapp.com",
+  projectId: "anime-int",
+  storageBucket: "anime-int.firebasestorage.app",
+  messagingSenderId: "685355500961",
+  appId: "1:685355500961:web:a069250f614f5ee430f7e0",
+  measurementId: "G-PZSC4WM727"
+};
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app);
 
-// Connection test as per critical constraint
+// Connection test disabled as per user request to not use Firestore yet
+/*
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'system', 'health'));
@@ -18,3 +28,4 @@ async function testConnection() {
   }
 }
 testConnection();
+*/

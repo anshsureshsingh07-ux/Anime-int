@@ -22,6 +22,8 @@ import {
   Settings,
   ChevronRight,
   LogOut,
+  Mail,
+  Lock,
   PlusCircle,
   X,
   ShieldCheck,
@@ -40,6 +42,9 @@ import {
   GoogleAuthProvider, 
   onAuthStateChanged, 
   signOut, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
   updateProfile as updateAuthProfile,
   type User
 } from 'firebase/auth';
@@ -129,43 +134,27 @@ export interface ProfileData {
 
 const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const isAdmin = profile?.role === 'admin' || user?.email === ADMIN_EMAIL;
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (u) {
-        // Real-time profile sync
-        const unsubscribe = onSnapshot(doc(db, 'users', u.uid), (snapshot) => {
-          if (snapshot.exists()) {
-            setProfile(snapshot.data() as ProfileData);
-          } else {
-            // Handle first-time Google login case
-            const createInitialProfile = async () => {
-              const initialData: Partial<ProfileData> = {
-                uid: u.uid,
-                email: u.email || '',
-                displayName: u.displayName || 'ANON_MEMBER',
-                photoURL: u.photoURL || '',
-                role: u.email === ADMIN_EMAIL ? 'admin' : 'user',
-                createdAt: serverTimestamp()
-              };
-              await setDoc(doc(db, 'users', u.uid), initialData);
-            };
-            createInitialProfile();
-          }
-        });
-        setLoading(false);
-        return unsubscribe;
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
+      setLoading(false);
     });
   }, []);
+
+  // Mock profile data from User object since Firestore is disabled for profiles
+  const profile: ProfileData | null = user ? {
+    uid: user.uid,
+    email: user.email || '',
+    displayName: user.displayName || 'GUEST_USER',
+    photoURL: user.photoURL || '',
+    username: user.email?.split('@')[0] || 'ANON',
+    role: user.email === ADMIN_EMAIL ? 'admin' : 'user',
+    createdAt: null
+  } : null;
 
   return { user, profile, loading, isAdmin };
 };
@@ -175,10 +164,22 @@ const useAuth = () => {
 const AuthModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+  const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
+
+  useEffect(() => {
+    if (isOpen && auth.currentUser && !auth.currentUser.emailVerified) {
+      setVerificationEmail(auth.currentUser.email);
+    }
+  }, [isOpen]);
 
   const handleGoogle = async () => {
     setLoading(true);
     setError('');
+    setVerificationEmail(null);
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
       onClose();
@@ -187,6 +188,62 @@ const AuthModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      if (isLogin) {
+        try {
+          const userCred = await signInWithEmailAndPassword(auth, email, password);
+          if (!userCred.user.emailVerified) {
+            setVerificationEmail(email);
+          } else {
+            onClose();
+          }
+        } catch (err: any) {
+          setError("Email or password is incorrect");
+        }
+      } else {
+        try {
+          const userCred = await createUserWithEmailAndPassword(auth, email, password);
+          await sendEmailVerification(userCred.user);
+          setVerificationEmail(email);
+        } catch (err: any) {
+          if (err.code === 'auth/email-already-in-use') {
+            setError("User already exists. Please sign in");
+          } else {
+            setError(err.message);
+          }
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!auth.currentUser) return;
+    setResendStatus('loading');
+    try {
+      await sendEmailVerification(auth.currentUser);
+      setResendStatus('sent');
+      setTimeout(() => setResendStatus('idle'), 5000);
+    } catch (err: any) {
+      console.error("Resend error:", err);
+      setResendStatus('error');
+      setError("Failed to resend. Ensure the domain is authorized in Firebase Console.");
+    }
+  };
+
+  const resetAuth = async () => {
+    await signOut(auth);
+    setVerificationEmail(null);
+    setIsLogin(true);
+    setError('');
+    setResendStatus('idle');
   };
 
   if (!isOpen) return null;
@@ -198,34 +255,119 @@ const AuthModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }
         animate={{ opacity: 1, scale: 1 }}
         className="glass-panel w-full max-w-sm p-8 rounded-3xl theme-border-orange relative shadow-2xl"
       >
-        <button onClick={onClose} className="absolute top-6 right-6 text-white/40 hover:text-white">
-          <X size={20} />
-        </button>
-
-        <h2 className="text-2xl font-display font-bold mb-2 theme-text-orange italic tracking-tighter">
-          SECURE_UPLINK
-        </h2>
-        <p className="text-[10px] text-white/40 tracking-widest uppercase mb-8">Establish connection to the Intelligence Hub</p>
-
-        {error && <p className="text-theme-red text-[10px] mb-6 font-bold uppercase p-3 bg-theme-red/5 border border-theme-red/20 rounded-xl">{error}</p>}
-
-        <div className="space-y-6">
-          <button 
-            onClick={handleGoogle}
-            disabled={loading}
-            className="w-full glass-card py-4 flex items-center justify-center gap-4 text-sm font-bold hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50 group border border-white/10"
-          >
-            <div className="bg-white p-2 rounded-lg">
-              <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="G" />
-            </div>
-            <span className="uppercase tracking-widest italic">{loading ? 'SYNCHRONIZING...' : 'GOOGLE_SYNC_AUTHORIZATION'}</span>
+        {!verificationEmail && (
+          <button onClick={onClose} className="absolute top-6 right-6 text-white/40 hover:text-white">
+            <X size={20} />
           </button>
-          
-          <p className="text-[9px] text-center text-white/20 uppercase tracking-widest">
-            By establishing connection, you agree to the <br /> 
-            <span className="text-white/40 hover:text-theme-orange cursor-pointer">Protocol Terms</span> & <span className="text-white/40 hover:text-theme-orange cursor-pointer">Security Standards</span>
-          </p>
-        </div>
+        )}
+
+        {verificationEmail ? (
+          <div className="text-center py-4">
+            <div className="w-16 h-16 bg-theme-orange/10 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-theme-orange/20">
+              <Mail className="text-theme-orange" size={32} />
+            </div>
+            <h2 className="text-xl font-display font-bold mb-4 theme-text-orange italic tracking-tighter uppercase">
+              UPLINK_VERIFICATION
+            </h2>
+            <p className="text-xs text-white/60 mb-6 leading-relaxed italic">
+              We have sent you a verification email to <span className="text-theme-orange font-bold font-mono">{verificationEmail}</span>. Please verify it and log in.
+            </p>
+            
+            <div className="space-y-4">
+              <button 
+                onClick={handleResend}
+                disabled={resendStatus === 'loading' || resendStatus === 'sent'}
+                className="w-full py-2 text-[10px] text-white/40 hover:text-theme-orange uppercase font-bold tracking-widest border border-white/5 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {resendStatus === 'loading' ? 'TRANSMITTING...' : 
+                 resendStatus === 'sent' ? 'EMAIL_SENT_SUCCESSFULLY' : 
+                 resendStatus === 'error' ? 'RETRY_UPLINK' : 'RESEND_VERIFICATION_EMAIL'}
+              </button>
+
+              <button 
+                onClick={resetAuth}
+                className="w-full theme-btn theme-btn-orange font-bold uppercase tracking-widest italic"
+              >
+                INITIALIZE LOGIN
+              </button>
+            </div>
+
+            <div className="mt-8 p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+              <p className="text-[9px] text-blue-400 font-bold uppercase tracking-tight leading-tight">
+                PRO TIP: If you don't receive emails, ensure this domain is added to 'Authorized Domains' in your Firebase Console.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <h2 className="text-2xl font-display font-bold mb-2 theme-text-orange italic tracking-tighter">
+              {isLogin ? 'SECURE_LOGIN' : 'INITIALIZE_OPS'}
+            </h2>
+            <p className="text-[10px] text-white/40 tracking-widest uppercase mb-8">Access the Intelligence Hub</p>
+
+            {error && <p className="text-theme-red text-[10px] mb-6 font-bold uppercase p-3 bg-theme-red/5 border border-theme-red/20 rounded-xl">{error}</p>}
+
+            <form onSubmit={handleAuth} className="space-y-4 mb-6">
+              <div className="space-y-4">
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 text-white/20" size={18} />
+                  <input 
+                    required
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="EMAIL_OPERATIVE"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-10 pr-4 text-sm focus:theme-border-orange outline-none"
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 text-white/20" size={18} />
+                  <input 
+                    required
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="ACCESS_CIPHER"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-10 pr-4 text-sm focus:theme-border-orange outline-none"
+                  />
+                </div>
+              </div>
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="w-full theme-btn theme-btn-orange font-bold uppercase tracking-widest italic"
+              >
+                {loading ? 'SYNCHRONIZING...' : (isLogin ? 'AUTHORIZE_UPLINK' : 'CREATE_OPERATIVE')}
+              </button>
+            </form>
+
+            <div className="space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-[10px] text-white/20 font-bold">OR_AUTH_VIA</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+
+              <button 
+                onClick={handleGoogle}
+                disabled={loading}
+                className="w-full glass-card py-4 flex items-center justify-center gap-4 text-sm font-bold hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50 group border border-white/10"
+              >
+                <div className="bg-white p-2 rounded-lg">
+                  <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="G" />
+                </div>
+                <span className="uppercase tracking-widest italic">GOOGLE_SYNC_UPLINK</span>
+              </button>
+              
+              <button 
+                onClick={() => setIsLogin(!isLogin)}
+                className="w-full text-center text-[10px] text-white/40 hover:text-theme-orange uppercase font-bold tracking-widest"
+              >
+                {isLogin ? "Terminate local record? Signup" : "Already verified? Login"}
+              </button>
+            </div>
+          </>
+        )}
       </motion.div>
     </div>
   );
@@ -693,38 +835,17 @@ const PostRecommendationModal = ({ isOpen, onClose }: { isOpen: boolean, onClose
 };
 
 const CommunityView = ({ profile }: { profile: ProfileData | null }) => {
-  const [posts, setPosts] = useState<PostItem[]>([]);
   const [newPost, setNewPost] = useState('');
   const [loading, setLoading] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  // Falling back to local constants as Firestore usage is disabled
+  const posts: PostItem[] = DISCUSSIONS as any;
 
   useEffect(() => {
-    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snapshot) => {
-      setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PostItem)));
-    });
+    // Firestore subscriptions disabled as per user request to not use Firestore yet
   }, []);
 
   const handleCreatePost = async () => {
-    if (!newPost || !profile) return;
-    setLoading(true);
-    try {
-      await addDoc(collection(db, 'posts'), {
-        content: newPost,
-        author: profile.displayName,
-        authorId: profile.uid,
-        authorUsername: profile.username || 'unknown',
-        authorPhoto: profile.photoURL || '',
-        likes: 0,
-        replyCount: 0,
-        createdAt: serverTimestamp()
-      });
-      setNewPost('');
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    // Disabled as per user request to not use Firestore yet
   };
 
   return (
@@ -784,33 +905,11 @@ const PostCard = ({ post, profile }: { post: PostItem, profile: ProfileData | nu
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'replies'), where('postId', '==', post.id), orderBy('createdAt', 'asc'));
-    return onSnapshot(q, (snapshot) => {
-      setReplies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplyItem)));
-    });
+    // Firestore subscriptions disabled as per user request to not use Firestore yet
   }, [post.id]);
 
   const handleReply = async () => {
-    if (!replyText || !profile) return;
-    setLoading(true);
-    try {
-      await addDoc(collection(db, 'replies'), {
-        postId: post.id,
-        content: replyText,
-        author: profile.displayName,
-        authorId: profile.uid,
-        authorUsername: profile.username || 'unknown',
-        authorPhoto: profile.photoURL || '',
-        createdAt: serverTimestamp()
-      });
-      // Optionally update local count for UX, but Firestore will sync
-      setReplyText('');
-      setIsReplying(false);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    // Disabled as per user request to not use Firestore yet
   };
 
   return (
@@ -1140,7 +1239,10 @@ const ProfileView = ({ user, profile, isAdmin, onLoginRequest }: { user: User | 
               
               <div className="pt-4 border-t border-white/10 mt-6">
                 <button 
-                  onClick={() => signOut(auth)}
+                  onClick={async () => {
+                    await signOut(auth);
+                    onLoginRequest(); // Returns to auth screen (modal) after logout
+                  }}
                   className="w-full flex items-center justify-between p-3 rounded-2xl bg-theme-red/5 border border-theme-red/20 group hover:bg-theme-red/10 transition-colors"
                 >
                   <div className="flex items-center gap-3">
@@ -1212,7 +1314,14 @@ export default function App() {
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
 
   useEffect(() => {
-    // Articles Subscription with 24h filter
+    if (user && !user.emailVerified && !isAuthOpen) {
+      setIsAuthOpen(true);
+    }
+  }, [user, isAuthOpen]);
+
+  useEffect(() => {
+    // Firestore subscriptions disabled as per user request to not use Firestore yet
+    /*
     const getFilterTime = () => Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
     const q = query(collection(db, 'articles'), where('createdAt', '>', getFilterTime()), orderBy('createdAt', 'desc'));
     
@@ -1221,7 +1330,6 @@ export default function App() {
       setRealArticles(data);
     });
 
-    // Recommendations Subscription
     const rq = query(collection(db, 'recommendations'), orderBy('createdAt', 'desc'));
     const unsubRecs = onSnapshot(rq, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RecommendationItem));
@@ -1232,35 +1340,16 @@ export default function App() {
       unsubArticles();
       unsubRecs();
     };
+    */
   }, []);
 
-  // Admin Auto-Deletion Cleanup
+  // Combined cleanup and profile sync effects removed to avoid Firestore usage
+  /*
   useEffect(() => {
     if (!isAdmin) return;
-
-    const cleanupOldArticles = async () => {
-      try {
-        const threshold = Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
-        const q = query(collection(db, 'articles'), where('createdAt', '<=', threshold));
-        const snapshot = await getDocs(q);
-        
-        if (snapshot.empty) return;
-
-        console.log(`[SYSTEM] Initializing cleanup for ${snapshot.size} expired transmissions...`);
-        const batch = writeBatch(db);
-        snapshot.docs.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
-        console.log(`[SYSTEM] Cleanup success. Node database optimized.`);
-      } catch (err) {
-        console.error("Cleanup failure:", err);
-      }
-    };
-
-    // Run cleanup on mount and every hour
-    cleanupOldArticles();
-    const interval = setInterval(cleanupOldArticles, 60 * 60 * 1000);
-    return () => clearInterval(interval);
+    ...
   }, [isAdmin]);
+  */
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-cyber-black flex-col gap-4">
