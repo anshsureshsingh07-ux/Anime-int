@@ -23,24 +23,27 @@ service cloud.firestore {
       return data.uid is string && data.uid.size() <= 128 &&
              data.email is string && data.email.size() <= 256 &&
              data.role in ['user', 'admin'] &&
-             (!data.keys().contains('username') || (data.username is string && data.username.size() >= 3 && data.username.size() <= 32 && data.username.matches('^[a-zA-Z0-9_]+$'))) &&
-             data.keys().hasAll(['uid', 'email', 'role']) && data.keys().size() >= 3;
+             (!data.keys().contains('username') || (data.username is string && data.username.size() >= 1 && data.username.size() <= 32)) &&
+             (!data.keys().contains('displayName') || (data.displayName is string && data.displayName.size() <= 128)) &&
+             (!data.keys().contains('name') || (data.name is string && data.name.size() <= 128)) &&
+             data.keys().hasAll(['uid', 'email', 'role']);
     }
 
     function isValidArticle(data) {
       return data.title is string && data.title.size() <= 256 &&
              data.category is string &&
              data.description is string && data.description.size() <= 1000 &&
-             data.content is string && data.content.size() <= 50000 &&
+             data.content is string && data.content.size() <= 60000 &&
              data.authorId == request.auth.uid &&
-             data.keys().hasAll(['title', 'category', 'description', 'content', 'image', 'authorId']) && data.keys().size() >= 6;
+             data.keys().hasAll(['title', 'category', 'description', 'content', 'author', 'authorId', 'createdAt', 'updatedAt', 'image']) && 
+             data.keys().size() >= 9;
     }
 
     function isValidPost(data) {
       return data.content is string && data.content.size() <= 1000 &&
              data.authorUsername is string &&
              data.authorId == request.auth.uid &&
-             data.keys().hasAll(['content', 'authorId', 'authorUsername']) && data.keys().size() >= 3;
+             data.keys().hasAll(['content', 'authorId', 'authorUsername', 'author', 'authorPhoto', 'likes', 'replyCount', 'createdAt']) && data.keys().size() >= 8;
     }
 
     function isValidReply(data) {
@@ -48,7 +51,7 @@ service cloud.firestore {
              data.authorUsername is string &&
              data.postId is string &&
              data.authorId == request.auth.uid &&
-             data.keys().hasAll(['content', 'authorId', 'authorUsername', 'postId']) && data.keys().size() >= 4;
+             data.keys().hasAll(['content', 'authorId', 'authorUsername', 'postId', 'author', 'authorPhoto', 'createdAt']) && data.keys().size() >= 7;
     }
 
     function isValidRecommendation(data) {
@@ -56,7 +59,14 @@ service cloud.firestore {
              data.rating is number && data.rating >= 0 && data.rating <= 10 &&
              data.image is string &&
              data.studio is string &&
-             data.keys().hasAll(['title', 'rating', 'image', 'studio']) && data.keys().size() >= 4;
+             data.createdAt != null;
+    }
+
+    function isValidGalleryItem(data) {
+      return data.imageUrl is string && data.imageUrl.size() <= 2048 &&
+             data.caption is string && data.caption.size() <= 500 &&
+             data.authorId == request.auth.uid &&
+             data.keys().hasAll(['imageUrl', 'caption', 'author', 'authorId', 'authorUsername', 'likes', 'createdAt']);
     }
 
     // --- COLLECTION RULES ---
@@ -64,14 +74,10 @@ service cloud.firestore {
     // Users: Owners can read/write their own profiles
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role == 'user'; // Users can't self-promote to admin
+      allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && isValidUser(incoming()) && 
                     incoming().role == existing().role && // Prevent role change
-                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'username']) &&
-                    // Enforce username uniqueness if changing
-                    (!incoming().keys().contains('username') || 
-                     (incoming().username == existing().username) ||
-                     (getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.uid == userId));
+                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'username', 'name', 'bio', 'location']);
     }
 
     // Usernames: Unique handle reservation
@@ -100,20 +106,35 @@ service cloud.firestore {
       allow delete: if isOwner(existing().authorId) || isAdmin();
     }
 
-    // Articles: Public read, Admin write
+    // Articles: Public read, User write
     match /articles/{articleId} {
       allow get: if true;
       allow list: if true;
-      allow create: if isAdmin() && isValidArticle(incoming());
-      allow update: if isAdmin() && isValidArticle(incoming());
-      allow delete: if isAdmin();
+      allow create: if isSignedIn() && isValidArticle(incoming());
+      allow update: if isSignedIn() && (
+        (isOwner(existing().authorId) && isValidArticle(incoming())) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'views', 'updatedAt']))
+      );
+      allow delete: if isOwner(existing().authorId) || isAdmin();
     }
 
     // Recommendations: Public read, Admin write
     match /recommendations/{recId} {
       allow read: if true;
-      allow write: if isAdmin() && isValidRecommendation(incoming());
+      allow create: if isAdmin() && isValidRecommendation(incoming());
+      allow update: if isAdmin() && isValidRecommendation(incoming());
       allow delete: if isAdmin();
+    }
+
+    // Gallery: Public read, User write
+    match /gallery/{imageId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidGalleryItem(incoming());
+      allow update: if isSignedIn() && (
+        (isOwner(existing().authorId) && isValidGalleryItem(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['caption'])) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['likes']))
+      );
+      allow delete: if isOwner(existing().authorId) || isAdmin();
     }
 
     // OTPs: Internal verification logic (normally handled by cloud functions or restrictive rules)

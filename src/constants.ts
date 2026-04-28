@@ -7,6 +7,7 @@ export interface AnimeStory {
   id: string;
   title: string;
   image: string;
+  imageUrl?: string;
   isLive?: boolean;
 }
 
@@ -17,6 +18,7 @@ export interface ArticleItem {
   description: string;
   content?: string;
   image: string;
+  imageUrl?: string;
   author: string;
   date: string;
   views: string | number;
@@ -29,6 +31,7 @@ export interface Recommendation {
   title: string;
   rating: number;
   image: string;
+  imageUrl?: string;
   studio: string;
 }
 

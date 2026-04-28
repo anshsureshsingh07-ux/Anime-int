@@ -9,6 +9,7 @@
         "email": { "type": "string" },
         "username": { "type": "string", "description": "Unique handle" },
         "displayName": { "type": "string" },
+        "name": { "type": "string", "description": "Full name or custom identifier" },
         "photoURL": { "type": "string" },
         "role": { "type": "string", "enum": ["user", "admin"] },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -98,6 +99,21 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "rating", "image", "studio"]
+    },
+    "GalleryItem": {
+      "title": "Gallery Media",
+      "description": "Visual media shared in the community gallery",
+      "type": "object",
+      "properties": {
+        "imageUrl": { "type": "string" },
+        "caption": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "likes": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["imageUrl", "authorId"]
     }
   },
   "firestore": {
@@ -120,6 +136,10 @@
     "/recommendations/{recommendationId}": {
       "schema": "Recommendation",
       "description": "Featured anime recommendations"
+    },
+    "/gallery/{imageId}": {
+      "schema": "GalleryItem",
+      "description": "Shared community gallery images"
     },
     "/otps/{otpId}": {
       "schema": "OTP",
